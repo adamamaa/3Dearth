@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 지구본 시뮬레이션 (텍스처 적용)</title>
+    <script src="https://cdn.tailwindcss.com"></script> <style>
+        body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; background-color: #111827; /* Dark background */ color: #f3f4f6; /* Light text */ }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            display:block;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 8px; /* Rounded corners */
+        }
+        canvas { display: block; } /* Prevent scrollbars */
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100">
+    <div id="info" class="text-sm md:text-base">
+        마우스를 드래그하여 지구본을 회전하고, 휠을 사용하여 확대/축소하세요.
+    </div>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        // OrbitControls를 import합니다. 마우스 상호작용을 가능하게 합니다.
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, sphere, controls;
+
+        function init() {
+            // Scene: 모든 3D 객체를 담는 컨테이너입니다.
+            scene = new THREE.Scene();
+            // Fog를 추가하여 깊이감을 줍니다.
+            scene.fog = new THREE.FogExp2(0x111827, 0.05);
+
+            // Camera: 3D 공간을 보는 시점입니다.
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 3; // 카메라를 조금 더 가깝게 이동합니다.
+
+            // Renderer: Scene과 Camera를 기반으로 이미지를 그립니다.
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setClearColor(0x111827);
+            document.body.appendChild(renderer.domElement);
+
+            // Texture Loader: 이미지 파일을 로드하여 텍스처로 사용합니다.
+            const textureLoader = new THREE.TextureLoader();
+            // 공개적으로 사용 가능한 지구 텍스처 URL 사용
+            // 출처: https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg
+            // 위 URL은 매우 고해상도이므로 로딩 시간이 걸릴 수 있습니다. 더 작은 버전을 사용합니다.
+            // 대체 텍스처 URL (더 낮은 해상도):
+            const earthTextureUrl = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-dark.jpg';
+            const earthTexture = textureLoader.load(
+                earthTextureUrl,
+                undefined, // onLoad 콜백 (필요시 사용)
+                undefined, // onProgress 콜백 (필요시 사용)
+                (err) => { // onError 콜백
+                    console.error('지구 텍스처를 로드하는 중 오류 발생:', err);
+                    // 오류 발생 시 기본 색상 재질 사용
+                    sphere.material = new THREE.MeshPhongMaterial({ color: 0x2563eb, shininess: 10 });
+                }
+            );
+            earthTexture.colorSpace = THREE.SRGBColorSpace; // 올바른 색상 공간 설정
+
+            // Geometry: 객체의 모양을 정의합니다 (구).
+            const geometry = new THREE.SphereGeometry(1.5, 64, 64);
+
+            // Material: 객체의 표면 모양을 정의합니다 (이제 텍스처 사용).
+            // MeshPhongMaterial은 빛에 반응하는 재질입니다.
+            const material = new THREE.MeshPhongMaterial({
+                map: earthTexture, // 로드된 텍스처를 map 속성에 할당합니다.
+                shininess: 10, // 광택을 줄여 더 사실적인 지구 표면처럼 보이게 합니다.
+                specular: 0x111111 // 반사광 색상 조정
+            });
+
+            // Mesh: Geometry와 Material을 결합하여 3D 객체를 만듭니다.
+            sphere = new THREE.Mesh(geometry, material);
+            scene.add(sphere); // Scene에 구를 추가합니다.
+
+            // Lighting: 장면에 빛을 추가합니다.
+            const ambientLight = new THREE.AmbientLight(0xcccccc, 0.8); // 약간 더 밝은 주변광
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); // 주 광원 강도 조정
+            directionalLight.position.set(5, 3, 5);
+            scene.add(directionalLight);
+
+            // Controls: 마우스로 카메라를 제어합니다.
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 2; // 최소 줌 거리 조정
+            controls.maxDistance = 10;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.3; // 자동 회전 속도 약간 줄임
+
+            // 창 크기 변경 처리
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        // 창 크기가 변경될 때 호출되는 함수
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Animation loop: 매 프레임마다 장면을 다시 그립니다.
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); // 컨트롤 업데이트 (감쇠 또는 자동 회전 시 필요)
+            renderer.render(scene, camera); // 장면 렌더링
+        }
+
+        // 창 로드 시 초기화 및 애니메이션 시작
+        window.onload = () => {
+            init();
+            animate();
+        };
+    </script>
+</body>
+</html>
